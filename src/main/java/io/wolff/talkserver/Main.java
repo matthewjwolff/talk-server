@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
@@ -15,10 +16,10 @@ import com.google.gson.GsonBuilder;
 
 public class Main extends WebSocketServer {
 	
-	private Object offerMessage = null;
-	private WebSocket offerSocket = null;
-	private WebSocket answerSocket = null;
-	private List<Object> answerIceBuffer = new ArrayList<>();
+	private Map<UUID, User> userMap = new HashMap<>();
+	private Map<WebSocket, User> usersBySocket = new HashMap<>();
+	
+	private Gson g = new Gson();
 
 	public Main(InetSocketAddress inetSocketAddress) {
 		super(inetSocketAddress);
@@ -30,60 +31,83 @@ public class Main extends WebSocketServer {
 
 	@Override
 	public void onOpen(WebSocket conn, ClientHandshake handshake) {
-		// TODO Auto-generated method stub
+		// a new user connected, give the user a UUID
+		// TODO: use objects
+		Map<String, Object> newUserMessage = new HashMap<>();
+		User u = new User(conn, UUID.randomUUID());
 		
+		newUserMessage.put("type", "new-user");
+		newUserMessage.put("data", u.id);
+		conn.send(g.toJson(newUserMessage));
+		
+		// tell everyone a new user connected, get the ball rolling
+		for(User other : userMap.values()) {
+			Map<String, Object> userJoinMessage = new HashMap<>();
+			userJoinMessage.put("type", "user-join");
+			userJoinMessage.put("data", u.id);
+			other.connection.send(g.toJson(userJoinMessage));
+		}
+		
+		// put this user in our maps
+		this.userMap.put(u.id, u);
+		this.usersBySocket.put(conn, u);
 	}
 
 	@Override
 	public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-		// TODO Auto-generated method stub
-		
+		// user disconnected
+		User userToRemove = null;
+		for(User u : userMap.values()) {
+			if(u.connection.equals(conn)) {
+				userToRemove = u;
+				break;
+			}
+		}
+		userMap.remove(userToRemove.id);
+		usersBySocket.remove(conn);
+		for(User remain : userMap.values()) {
+			Map<String, Object> userLeaveMessage = new HashMap<>();
+			userLeaveMessage.put("type", "user-leave");
+			userLeaveMessage.put("data", userToRemove.id);
+			remain.connection.send(g.toJson(userLeaveMessage));
+		}
 	}
 
 	@Override
 	public void onMessage(WebSocket conn, String message) {
-		Gson g = new Gson();
 		// TODO: do this smarter
 		@SuppressWarnings("rawtypes")
 		Map req = g.fromJson(message, Map.class);
 		Map<String, Object> resp = new HashMap<>();
-		// TODO: different init (put in onOpen)
-		if("get-offer".equals(req.get("type"))) {
-			resp.put("type", "get-offer");
-			resp.put("data", offerMessage);
-			conn.send(g.toJson(resp));
-		} else if("set-offer".equals(req.get("type")) ) {
-			this.offerMessage = req.get("data");
-			offerSocket = conn;
-		} else if("answer".equals(req.get("type"))) {
-			// tell the caller there was an answer
-			answerSocket = conn;
-			// if any ice candidates arrived before he showed up, send them to him
-			for(Object ice : this.answerIceBuffer) {
-				Map<String, Object> iceResp = new HashMap<>();
-				iceResp.put("type", "ice-candidate");
-				iceResp.put("data", ice);
-				offerSocket.send(g.toJson(iceResp));
-			}
-			this.answerIceBuffer.clear();
-			resp.put("type", "answer");
-			resp.put("data", req.get("data"));
-			offerSocket.send(g.toJson(resp));
+		User sender = this.usersBySocket.get(conn);
+		
+		if("send-offer".equals(req.get("type"))) {
+			// TODO: caller wants to send offer to target in message
+			@SuppressWarnings("unchecked")
+			Map<String, Object> data = (Map<String, Object>) req.get("data");
+			User target = userMap.get(UUID.fromString((String) req.get("target")));
+			Map<String, Object> targetMessage = new HashMap<>();
+			targetMessage.put("type", "receive-offer");
+			targetMessage.put("from", sender.id.toString());
+			targetMessage.put("data", data);
+			target.connection.send(g.toJson(targetMessage));
+		} else if("send-answer".equals(req.get("type"))) {
+			// TODO: someone is sending an answer to the target
+			User target = userMap.get(UUID.fromString((String) req.get("target")));
+			@SuppressWarnings("unchecked")
+			Map<String, Object> answer = (Map<String, Object>) req.get("data");
+			Map<String, Object> targetMessage = new HashMap<>();
+			targetMessage.put("type", "receive-answer");
+			targetMessage.put("from", sender.id.toString());
+			targetMessage.put("data", answer);
+			target.connection.send(g.toJson(targetMessage));
 		} else if("ice-candidate".equals(req.get("type"))) {
-			// TODO: turns out this can happen as soon as a person connects
-			// relay the message to the other person
-			resp.put("type", "ice-candidate");
-			resp.put("data", req.get("data"));
-			if(conn.equals(this.offerSocket)) {
-				// the answerer may not have arrived yet
-				if(this.answerSocket == null) {
-					this.answerIceBuffer.add(req.get("data"));
-				} else {
-					this.answerSocket.send(g.toJson(resp));
-				}
-			} else {
-				this.offerSocket.send(g.toJson(resp));
-			}
+			User target = userMap.get(UUID.fromString((String) req.get("target")));
+			Map<String, Object> outMessage = new HashMap<>();
+			outMessage.put("type", "ice-candidate");
+			outMessage.put("from", sender.id);
+			outMessage.put("data", req.get("data"));
+			target.connection.send(g.toJson(outMessage));
 		} else {
 			throw new RuntimeException("Unsupported Request: "+req.get("type"));
 		}
