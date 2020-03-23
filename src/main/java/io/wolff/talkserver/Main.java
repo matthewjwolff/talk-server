@@ -36,6 +36,9 @@ public class Main extends WebSocketServer {
 		Map<String, Object> newUserMessage = new HashMap<>();
 		User u = new User(conn, UUID.randomUUID());
 		
+		// TODO: better logging
+		System.out.println(u.id + " joined");
+		
 		newUserMessage.put("type", "new-user");
 		newUserMessage.put("data", u.id);
 		conn.send(g.toJson(newUserMessage));
@@ -63,6 +66,7 @@ public class Main extends WebSocketServer {
 				break;
 			}
 		}
+		System.out.println(userToRemove.id + " left");
 		userMap.remove(userToRemove.id);
 		usersBySocket.remove(conn);
 		for(User remain : userMap.values()) {
@@ -80,6 +84,8 @@ public class Main extends WebSocketServer {
 		Map req = g.fromJson(message, Map.class);
 		Map<String, Object> resp = new HashMap<>();
 		User sender = this.usersBySocket.get(conn);
+		
+		System.out.println(sender.id + ": "+message);
 		
 		if("send-offer".equals(req.get("type"))) {
 			// TODO: caller wants to send offer to target in message
