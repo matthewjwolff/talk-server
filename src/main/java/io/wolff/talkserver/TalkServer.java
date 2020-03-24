@@ -14,19 +14,19 @@ import org.java_websocket.server.WebSocketServer;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
-public class Main extends WebSocketServer {
+public class TalkServer extends WebSocketServer {
 	
 	private Map<UUID, User> userMap = new HashMap<>();
 	private Map<WebSocket, User> usersBySocket = new HashMap<>();
 	
 	private Gson g = new Gson();
 
-	public Main(InetSocketAddress inetSocketAddress) {
+	public TalkServer(InetSocketAddress inetSocketAddress) {
 		super(inetSocketAddress);
 	}
 
 	public static void main(String[] args) {
-		new Main(new InetSocketAddress("localhost",8081)).run();
+		new TalkServer(new InetSocketAddress("localhost",8081)).run();
 	}
 
 	@Override
