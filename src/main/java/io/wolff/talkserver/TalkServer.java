@@ -114,6 +114,16 @@ public class TalkServer extends WebSocketServer {
 			outMessage.put("from", sender.id);
 			outMessage.put("data", req.get("data"));
 			target.connection.send(g.toJson(outMessage));
+		} else if("set-username".equals(req.get("type"))) {
+			Map<String, Object> outMessage = new HashMap<>();
+			outMessage.put("type", "set-username");
+			outMessage.put("from", sender.id);
+			outMessage.put("data", req.get("data"));
+			for(WebSocket user : usersBySocket.keySet()) {
+				if(!user.equals(conn)) {
+					user.send(g.toJson(outMessage));
+				}
+			}
 		} else {
 			throw new RuntimeException("Unsupported Request: "+req.get("type"));
 		}
